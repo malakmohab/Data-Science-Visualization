@@ -1,0 +1,237 @@
+library(reader)    #package reader to read csv
+grc=read.csv("C:/Users/PC/Desktop/grc.csv")
+
+grc_cleaned1=unique(grc)    # remove duplicates
+grc_cleaned2=na.omit(grc_cleaned1)    #remove NA
+grc_cleaned2
+
+
+#visualization
+#Dashboard
+
+par(mfrow = c(2,2))
+
+#1) Compare cash and credit totals using pie chart to display percentage using pie chart
+x = table(grc_cleaned2$paymentType)   
+x
+percentage=paste0(round(100*x/sum(x)),"%")
+pie(x = table(grc_cleaned2$paymentType),labels = percentage, main = "Payment types",col = c("seagreen","hotpink"))
+legend("bottomright",legend = c("cash","credit"),fill =c("seagreen","hotpink"))
+
+#2) Compare each age with the sum of total spending using scatter plot to display a relation between 2 attributes
+
+totals_by_age = aggregate(total ~ age, data = grc_cleaned2, FUN = sum) 
+x = plot(totals_by_age$age , y = totals_by_age$total,
+         xlab = "age", ylab = "total spending",
+         main = "relation between each age and its total spending" ,col=c("hotpink4"))
+
+
+#3) Compare each city and its Total spending using bar plot (descending)
+
+totals_by_city = aggregate(total ~ city, data = grc_cleaned2, FUN = sum) 
+totals_by_city = totals_by_city[order(totals_by_city$total, decreasing = TRUE), ] #descendingly
+
+barplot(totals_by_city$total, names.arg = totals_by_city$city,
+        xlab = "City", ylab = "Total Spending",
+        main = "Relation between each city and its total spending", col = "paleturquoise1") 
+
+
+#4) Display distribution of total spending using box plot 
+
+x = boxplot(grc_cleaned2$total , main= "Distribution of total spending" , col= "rosybrown1")
+
+
+#Clustering
+# This function call is part of the dplyr package and is used to group the data by the "customer" column.
+library(dplyr) 
+#function is used to compute summary statistics for each group created by group_by().
+num_clusters = as.numeric(readline("Enter the number of clusters (n): "))
+grouped=grc_cleaned2 %>% group_by(customer,age)%>%
+  summarise(total_sales=sum(total))
+kmeans_result2=kmeans(grouped[,c(3,2)],centers = num_clusters)
+grouped$cluster=kmeans_result2$cluster
+
+                          
+#Association rules
+library(arules)
+s = as.numeric(readline("Enter support: "))
+c = as.numeric(readline("Enter confidence: "))
+l = as.numeric(readline("Enter length: "))
+                          
+if( s > 0.001 && s < 1  &&  c > 0.001 && c < 1){
+  trans = grc_cleaned2$items
+  temp_file = tempfile()
+  writeLines(trans, temp_file)
+  transactions = read.transactions(temp_file, sep = ",")
+  rules = apriori(transactions, parameter = list(support = s, confidence = c, minlen = l))
+  inspect(rules)
+}else{
+  print("Invalid Input")
+}
+
+
+
+
+
+#GUI
+
+# Load necessary packages
+
+library(shiny)
+library(plotly)
+library(reader)
+library(dplyr)
+library(arules)
+
+# Load the data
+grc <- read.csv("C:/Users/PC/Desktop/grc.csv")
+grc_cleaned1 <- unique(grc)  # Remove duplicates
+grc_cleaned2 <- na.omit(grc_cleaned1)  # Remove NA
+
+# Define the UI
+ui <- fluidPage(
+  titlePanel("Data Visualization and Analysis"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      numericInput("num_clusters", "Number of Clusters:", value = 2, min = 1),
+      numericInput("support", "Support:", value = 0.01, min = 0.001, max = 1, step = 0.001),
+      numericInput("confidence", "Confidence:", value = 0.8, min = 0.001, max = 1, step = 0.001),
+      numericInput("length", "Minimum Length:", value = 2, min = 1),
+      actionButton("run_analysis", "Run Analysis")
+    ),
+    
+    mainPanel(
+      plotlyOutput("payment_pie"),
+      plotlyOutput("age_spending"),
+      plotlyOutput("city_spending"),
+      plotlyOutput("total_spending_box"),
+      verbatimTextOutput("association_rules"),
+      plotlyOutput("clustering")
+    )
+  )
+)
+
+# Define server logic
+server <- function(input, output) {
+  # Reactive expression to handle clustering
+  clustered_data <- reactive({
+    req(input$num_clusters)
+    grouped <- grc_cleaned2 %>% group_by(customer, age) %>%
+      summarise(total_sales = sum(total))
+    kmeans_result <- kmeans(grouped[, c(3, 2)], centers = input$num_clusters)
+    grouped$cluster <- kmeans_result$cluster
+    return(grouped)
+  })
+  
+  # Render pie chart for payment types
+  output$payment_pie <- renderPlotly({
+    payment_table <- table(grc_cleaned2$paymentType)
+    percentage <- paste0(round(100 * payment_table / sum(payment_table)), "%")
+    fig <- plot_ly(
+      labels = names(payment_table),
+      values = payment_table,
+      type = 'pie',
+      marker = list(colors = c("seagreen", "hotpink"))
+    )
+    fig <- fig %>% layout(title = "Payment Types")
+    return(fig)
+  })
+  
+  
+  # Render scatter plot for age and total spending
+  output$age_spending <- renderPlotly({
+    totals_by_age <- aggregate(total ~ age, data = grc_cleaned2, FUN = sum)
+    fig <- plot_ly(
+      data = totals_by_age,
+      x = ~age,
+      y = ~total,
+      type = 'scatter',
+      mode = 'markers',
+      color = I('hotpink4')
+      
+    )
+    fig <- fig %>% layout(
+      title = "Relation between Age and Total Spending",
+      xaxis = list(title = "Age"),
+      yaxis = list(title = "Total Spending")
+    )
+    return(fig)
+  })
+  
+  # Render bar plot for city and total spending
+  output$city_spending <- renderPlotly({
+    totals_by_city <- aggregate(total ~ city, data = grc_cleaned2, FUN = sum)
+    totals_by_city <- totals_by_city[order(totals_by_city$total, decreasing = TRUE), ]
+    fig <- plot_ly(
+      data = totals_by_city,
+      x = ~city,
+      y = ~total,
+      type = 'bar',
+      color = I('paleturquoise1')
+      
+    )
+    fig <- fig %>% layout(
+      title = "Relation between City and Total Spending",
+      xaxis = list(title = "City"),
+      yaxis = list(title = "Total Spending")
+    )
+    return(fig)
+  })
+  
+  # Render box plot for total spending distribution
+  output$total_spending_box <- renderPlotly({
+    fig <- plot_ly(
+      data = grc_cleaned2,
+      y = ~total,
+      type = 'box',
+      color = 'rosybrown1'
+      
+    )
+    fig <- fig %>% layout(
+      title = "Distribution of Total Spending",
+      yaxis = list(title = "Total Spending")
+    )
+    return(fig)
+  })
+  
+  # Render association rules
+  output$association_rules <- renderPrint({
+    req(input$support, input$confidence, input$length)
+    if (input$support > 0.001 && input$support < 1 &&
+        input$confidence > 0.001 && input$confidence < 1) {
+      trans <- grc_cleaned2$items
+      temp_file <- tempfile()
+      writeLines(trans, temp_file)
+      transactions <- read.transactions(temp_file, sep = ",")
+      rules <- apriori(transactions, parameter = list(support = input$support, confidence = input$confidence, minlen = input$length))
+      inspect(rules)
+    } else {
+      print("Invalid input for support, confidence, or length.")
+    }
+  })
+  
+  # Render clustering
+  output$clustering <- renderPlotly({
+    req(input$num_clusters)
+    grouped <- clustered_data()
+    fig <- plot_ly(
+      data = grouped,
+      x = ~total_sales,
+      y = ~age,
+      type = 'scatter',
+      mode = 'markers',
+      color = ~as.factor(cluster),
+      colors = c("red", "green", "blue")
+    )
+    fig <- fig %>% layout(
+      title = "Clustering of Customers by Total Sales and Age",
+      xaxis = list(title = "Total Sales"),
+      yaxis = list(title = "Age")
+    )
+    return(fig)
+  })
+}
+
+# Run the app
+shinyApp(ui = ui, server = server)
